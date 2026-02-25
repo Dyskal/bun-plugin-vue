@@ -22,6 +22,8 @@ try {
   compiler.registerTS(() => ts);
 } catch {}
 
+const normalizePath = (path: string) => path.replace(/\\/g, '/');
+
 export default function plugin(options?: VuePluginOptions): BunPlugin {
   const opts = options || {};
 
@@ -38,24 +40,25 @@ export default function plugin(options?: VuePluginOptions): BunPlugin {
       setVueCompileTimeFlags(build, opts);
 
       build.onResolve({ filter: /\.vue/ }, (args) => {
-        const paramsString = args.path.split('?')[1];
+        const path = normalizePath(args.path);
+        const paramsString = path.split('?')[1];
         const params = new URLSearchParams(paramsString);
         const type = params.get('type');
 
         const ns = type === 'script'
           ? 'sfc-script'
           : type === 'template'
-          ? 'sfc-template'
-          : type === 'style'
-          ? 'sfc-style'
-          : undefined;
+            ? 'sfc-template'
+            : type === 'style'
+              ? 'sfc-style'
+              : undefined;
 
         if (ns === undefined) {
           return
         }
 
         return {
-          path: args.path,
+          path,
           namespace: ns,
         }
       });
@@ -67,7 +70,7 @@ export default function plugin(options?: VuePluginOptions): BunPlugin {
       const scriptMap = new Map<string, compiler.SFCScriptBlock>();
 
       build.onLoad({ filter: /.*/,  namespace: 'sfc-script' }, async (args) => {
-        const path = args.path.split('?')[0]!;
+        const path = normalizePath(args.path).split('?')[0]!;
         const script = scriptMap.get(path);
 
         if (!script) {
@@ -82,7 +85,7 @@ export default function plugin(options?: VuePluginOptions): BunPlugin {
       });
 
       build.onLoad({ filter: /.*/, namespace: 'sfc-template' }, async (args) => {
-        const path = args.path.split('?')[0]!;
+        const path = normalizePath(args.path).split('?')[0]!;
         const descriptor = descriptorMap.get(path);
 
         if (!descriptor) {
@@ -113,7 +116,7 @@ export default function plugin(options?: VuePluginOptions): BunPlugin {
       });
 
       build.onLoad({ filter: /.*/, namespace: 'sfc-style' }, async (args) => {
-        const path = args.path.split('?')[0]!;
+        const path = normalizePath(args.path).split('?')[0]!;
         const descriptor = descriptorMap.get(path);
         const id = idMap.get(path)!;
 
@@ -137,25 +140,26 @@ export default function plugin(options?: VuePluginOptions): BunPlugin {
       });
 
       build.onLoad({ filter: /\.vue$/ }, async (args) => {
+        const path = normalizePath(args.path);
         const file = Bun.file(args.path);
         const source = await file.text();
 
         const { descriptor, errors } = compiler.parse(source, {
-          filename: args.path,
+          filename: path,
           // TODO: sourcemap
         });
 
         if (errors.length) {
           console.error(
-            `[vue-plugin:error] Errors parsing ${args.path}`,
+            `[vue-plugin:error] Errors parsing ${path}`,
           );
           throw errors[0]!;
         }
 
-        descriptorMap.set(args.path, descriptor);
+        descriptorMap.set(path, descriptor);
 
         const id = `data-v-${currentId++}`;
-        idMap.set(args.path, id);
+        idMap.set(path, id);
 
         if (descriptor.script || descriptor.scriptSetup) {
           const logError = <T>(message: string, value: T): T => {
@@ -174,14 +178,14 @@ export default function plugin(options?: VuePluginOptions): BunPlugin {
                     ? fs.readFileSync(file + '/index.ts', 'utf-8')
                     : fs.existsSync(file + '/index.d.ts')
                       ? fs.readFileSync(file + '/index.d.ts', 'utf-8')
-                        : logError<string>('Could not resolve directory', '')
+                      : logError<string>('Could not resolve directory', '')
                 } else {
                   return fs.readFileSync(file, 'utf-8');
                 }
               },
             }
           });
-          scriptMap.set(args.path, script);
+          scriptMap.set(path, script);
         } else {
           // Fallthrough when <script> is not present
           const script: compiler.SFCScriptBlock = {
@@ -198,17 +202,17 @@ export default function plugin(options?: VuePluginOptions): BunPlugin {
             attrs: {},
           }
 
-          scriptMap.set(args.path, script);
+          scriptMap.set(path, script);
         }
 
-        let code = `import script from "${args.path}?type=script";\n`;
+        let code = `import script from "${path}?type=script";\n`;
 
         if (descriptor.styles.length > 0) {
-          code += `import "${args.path}?type=style";\n`;
+          code += `import "${path}?type=style";\n`;
         }
 
         if (descriptor.template) {
-          code += `import { render } from "${args.path}?type=template";\n`;
+          code += `import { render } from "${path}?type=template";\n`;
           code += 'script.render = render;\n';
         }
 
