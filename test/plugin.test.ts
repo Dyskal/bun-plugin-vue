@@ -20,6 +20,7 @@ test('it builds', async () => {
 
 test('fails on empty', async () => {
   const Empty = (await import('./fixtures/Empty.vue')).default;
+  console.log(Empty)
   expect.assertions(2);
 
   const errorLogSpy = spyOn(console, 'error');
@@ -33,4 +34,19 @@ test('fails on empty', async () => {
   expect(errorLogSpy).toHaveBeenCalledWith(
     expect.stringContaining('[vue-plugin:error] Errors parsing')
   );
+})
+
+test.if(process.platform === 'win32')('it builds with Windows backslashes', async () => {
+  const Basic = (await import('./fixtures/Basic.vue')).default;
+  // Replace forward slashes with backslashes to simulate Windows paths
+  const windowsPath = Basic.replace(/\//g, '\\');
+
+  const output = await Bun.build({
+    // @ts-expect-error
+    entrypoints: [windowsPath],
+    plugins: [vuePlugin()],
+  })
+
+  expect(output.success).toBe(true);
+  expect(output.outputs[0]!.size).toBeGreaterThan(0);
 })
